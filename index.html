@@ -1,6 +1,19 @@
-# ============================================================
-# IA AGENTE ULTRA++ — TODAS AS CAMADAS ATIVAS
-# ============================================================
+"""
+============================================================
+IA AGENTE ULTRA++ — ARQUIVO ÚNICO (GITHUB READY)
+============================================================
+
+COMO USAR:
+1) Suba este arquivo no GitHub
+2) Rode com: python main.py
+3) Digite como se fosse um cliente
+4) Digite 'exit' ou 'sair' para encerrar
+
+OBS:
+- O banco SQLite é criado automaticamente
+- Nenhum arquivo extra é obrigatório
+============================================================
+"""
 
 import sqlite3
 import datetime
@@ -8,8 +21,16 @@ import uuid
 import random
 import os
 
+# ============================================================
+# UTILIDADES
+# ============================================================
+
 def now():
     return datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+# ============================================================
+# BANCO DE DADOS (AUTO + COMPATÍVEL COM GITHUB)
+# ============================================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "ia_ultra_plus.db")
@@ -38,29 +59,78 @@ CREATE TABLE IF NOT EXISTS logs (
 
 db.commit()
 
+# ============================================================
+# PRODUTOS
+# ============================================================
+
 PRODUCTS = {
-    "basico": {"nome": "Guia Do Zero ao Primeiro Pix", "preco": 5.99},
-    "premium": {"nome": "Projeto Renda Digital + IA", "preco": 15.00}
+    "basico": {
+        "nome": "Guia Do Zero ao Primeiro Pix",
+        "preco": 5.99
+    },
+    "premium": {
+        "nome": "Projeto Renda Digital + IA",
+        "preco": 15.00
+    }
 }
+
+# ============================================================
+# ANALISADORES
+# ============================================================
 
 def detect_intent(text):
     t = text.lower()
-    if any(x in t for x in ["preço", "valor", "quanto"]): return "PRICE"
-    if any(x in t for x in ["funciona", "vale", "confio"]): return "DOUBT"
-    if any(x in t for x in ["comprar", "pix", "quero"]): return "BUY"
-    if any(x in t for x in ["depois", "agora não"]): return "BLOCK"
+    if any(x in t for x in ["preço", "valor", "quanto"]):
+        return "PRICE"
+    if any(x in t for x in ["funciona", "vale", "confio"]):
+        return "DOUBT"
+    if any(x in t for x in ["comprar", "pix", "quero"]):
+        return "BUY"
+    if any(x in t for x in ["depois", "agora não"]):
+        return "BLOCK"
     return "CHAT"
 
+def detect_personality(text):
+    t = text.lower()
+    if any(x in t for x in ["medo", "desconfiado"]):
+        return "cauteloso"
+    if any(x in t for x in ["rápido", "direto"]):
+        return "direto"
+    return "normal"
+
+# ============================================================
+# LEAD SCORING
+# ============================================================
+
 def lead_score(intent):
-    return {"BUY":30,"PRICE":20,"DOUBT":10,"CHAT":5,"BLOCK":2}.get(intent,0)
+    scores = {
+        "BUY": 30,
+        "PRICE": 20,
+        "DOUBT": 10,
+        "CHAT": 5,
+        "BLOCK": 2
+    }
+    return scores.get(intent, 0)
+
+# ============================================================
+# AGENTES
+# ============================================================
 
 class SalesAgent:
     def respond(self, intent):
-        if intent == "PRICE": return "Tenho duas opções: R$5,99 ou R$15,00 com IA."
-        if intent == "DOUBT": return "Funciona pra quem aplica."
-        if intent == "BUY": return "Perfeito. Te mando o link?"
-        if intent == "BLOCK": return "Entendo, mas continuar parado custa mais."
+        if intent == "PRICE":
+            return "Tenho duas opções: R$5,99 pra começar ou R$15,00 com IA."
+        if intent == "DOUBT":
+            return "Funciona pra quem aplica. É simples e direto."
+        if intent == "BUY":
+            return "Perfeito. Te mando o link agora?"
+        if intent == "BLOCK":
+            return "Entendo, mas continuar parado costuma custar mais."
         return "O que mais te trava hoje?"
+
+# ============================================================
+# IA PRINCIPAL
+# ============================================================
 
 class IAUltraPlus:
     def __init__(self):
@@ -68,52 +138,51 @@ class IAUltraPlus:
         self.score = 0
 
         c.execute("""
-        INSERT OR IGNORE INTO leads VALUES (?, ?, ?, ?, ?)
-        """,(self.id,0,"iniciante","normal",now()))
+        INSERT OR IGNORE INTO leads
+        VALUES (?, ?, ?, ?, ?)
+        """, (self.id, 0, "iniciante", "normal", now()))
         db.commit()
 
-    def handle(self, msg):
-        intent = detect_intent(msg)
-        self.score += lead_score(intent)
-        c.execute("UPDATE leads SET score=? WHERE id=?",(self.score,self.id))
+    def log(self, role, message):
+        c.execute("""
+        INSERT INTO logs VALUES (?, ?, ?, ?)
+        """, (self.id, role, message, now()))
         db.commit()
-        return SalesAgent().respond(intent)
+
+    def handle(self, message):
+        self.log("user", message)
+
+        intent = detect_intent(message)
+        perfil = detect_personality(message)
+        self.score += lead_score(intent)
+
+        c.execute("""
+        UPDATE leads
+        SET score = ?, personalidade = ?, ultima_interacao = ?
+        WHERE id = ?
+        """, (self.score, perfil, now(), self.id))
+        db.commit()
+
+        response = SalesAgent().respond(intent)
+        self.log("agent", response)
+
+        return response
+
+# ============================================================
+# EXECUÇÃO
+# ============================================================
 
 def main():
     ia = IAUltraPlus()
     print("IA: Fala, tudo certo?")
+
     while True:
         msg = input("Cliente: ")
-        if msg.lower() in ["sair","exit"]:
+        if msg.lower() in ["exit", "sair"]:
+            print("IA: Até mais!")
             break
+
         print("IA:", ia.handle(msg))
 
 if __name__ == "__main__":
     main()
-*.db
-__pycache__/
-.env
-# IA Ultra Plus 🤖
-
-IA de vendas automática com lead scoring e copy persuasiva.
-
-## Como rodar
-```bash
-python main.py
-
----
-
-## ✅ 4️⃣ Estrutura da pasta (igual no GitHub)
-
-
----
-
-## ✅ 5️⃣ Comandos para subir no GitHub
-
-```bash
-git init
-git add .
-git commit -m "IA Ultra Plus pronta"
-git branch -M main
-git remote add origin https://github.com/SEUUSUARIO/ia-ultra-plus.git
-git push -u origin main
