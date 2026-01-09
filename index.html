@@ -1,11 +1,18 @@
 # ============================================================
-# IA AGENTE ULTRA++ — TODAS AS CAMADAS ATIVAS
+# IA AGENTE ULTRA++ — VERSÃO APLICATIVO WEB (FLASK)
 # ============================================================
 
 import sqlite3
 import datetime
 import uuid
 import random
+from flask import Flask, request, jsonify
+
+# ============================================================
+# APP
+# ============================================================
+
+app = Flask(__name__)
 
 # ============================================================
 # UTILIDADES
@@ -18,7 +25,7 @@ def now():
 # BANCO DE DADOS
 # ============================================================
 
-db = sqlite3.connect("ia_ultra_plus.db")
+db = sqlite3.connect("ia_ultra_plus.db", check_same_thread=False)
 c = db.cursor()
 
 c.execute("""
@@ -40,13 +47,6 @@ CREATE TABLE IF NOT EXISTS logs (
 )
 """)
 
-c.execute("""
-CREATE TABLE IF NOT EXISTS metrics (
-    tipo TEXT,
-    valor INTEGER
-)
-""")
-
 db.commit()
 
 # ============================================================
@@ -54,57 +54,34 @@ db.commit()
 # ============================================================
 
 PRODUCTS = {
-    "basico": {
-        "nome": "Guia Do Zero ao Primeiro Pix",
-        "preco": 5.99
-    },
-    "premium": {
-        "nome": "Projeto Renda Digital + IA",
-        "preco": 15.00
-    }
+    "basico": {"nome": "Guia Do Zero ao Primeiro Pix", "preco": 5.99},
+    "premium": {"nome": "Projeto Renda Digital + IA", "preco": 15.00}
 }
 
 # ============================================================
 # ANALISADORES
 # ============================================================
 
-def detect_intent(text: str) -> str:
+def detect_intent(text):
     t = text.lower()
-
-    if any(x in t for x in ["preço", "valor", "quanto"]):
-        return "PRICE"
-    if any(x in t for x in ["funciona", "vale", "confio"]):
-        return "DOUBT"
-    if any(x in t for x in ["comprar", "pix", "quero"]):
-        return "BUY"
-    if any(x in t for x in ["depois", "agora não"]):
-        return "BLOCK"
-
+    if any(x in t for x in ["preço", "valor", "quanto"]): return "PRICE"
+    if any(x in t for x in ["funciona", "vale", "confio"]): return "DOUBT"
+    if any(x in t for x in ["comprar", "pix", "quero"]): return "BUY"
+    if any(x in t for x in ["depois", "agora não"]): return "BLOCK"
     return "CHAT"
 
-
-def detect_personality(text: str) -> str:
+def detect_personality(text):
     t = text.lower()
-
-    if any(x in t for x in ["medo", "desconfiado"]):
-        return "cauteloso"
-    if any(x in t for x in ["rápido", "direto"]):
-        return "direto"
-
+    if any(x in t for x in ["medo", "desconfiado"]): return "cauteloso"
+    if any(x in t for x in ["rápido", "direto"]): return "direto"
     return "normal"
 
 # ============================================================
 # LEAD SCORING
 # ============================================================
 
-def lead_score(intent_type: str) -> int:
-    scores = {
-        "BUY": 30,
-        "PRICE": 20,
-        "DOUBT": 10,
-        "CHAT": 5,
-        "BLOCK": 2
-    }
+def lead_score(intent_type):
+    scores = {"BUY": 30, "PRICE": 20, "DOUBT": 10, "CHAT": 5, "BLOCK": 2}
     return scores.get(intent_type, 0)
 
 # ============================================================
@@ -112,30 +89,16 @@ def lead_score(intent_type: str) -> int:
 # ============================================================
 
 class SalesAgent:
-    def respond(self, intent_type: str, perfil: str) -> str:
+    def respond(self, intent_type):
         if intent_type == "PRICE":
             return "Tenho duas opções: R$5,99 pra começar ou R$15,00 com IA inclusa."
         if intent_type == "DOUBT":
-            return "Funciona pra quem aplica. O foco é simplicidade e ação."
+            return "Funciona pra quem aplica. O foco é simplicidade."
         if intent_type == "BUY":
             return "Perfeito. Te mando o link agora?"
         if intent_type == "BLOCK":
             return "Entendo. Mas continuar parado costuma custar mais."
         return "Me conta: o que mais te trava hoje?"
-
-
-class CopyAgent:
-    def offer(self, product: dict) -> str:
-        return f"{product['nome']} por apenas R${product['preco']:.2f}. Simples e direto."
-
-
-class FollowUpAgent:
-    def next_message(self) -> str:
-        return random.choice([
-            "Fiquei pensando no que você falou.",
-            "Conseguiu decidir?",
-            "Quando fizer sentido, me chama."
-        ])
 
 # ============================================================
 # IA PRINCIPAL
@@ -145,56 +108,54 @@ class IAUltraPlus:
     def __init__(self):
         self.id = str(uuid.uuid4())
         self.score = 0
-
         self.sales = SalesAgent()
-        self.copy = CopyAgent()
-        self.follow = FollowUpAgent()
 
         c.execute("""
-        INSERT OR IGNORE INTO leads
-        (id, score, nivel, personalidade, ultima_interacao)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO leads VALUES (?, ?, ?, ?, ?)
         """, (self.id, 0, "iniciante", "normal", now()))
         db.commit()
 
-    def log(self, role: str, message: str):
-        c.execute("""
-        INSERT INTO logs (id, role, message, data)
-        VALUES (?, ?, ?, ?)
-        """, (self.id, role, message, now()))
+    def log(self, role, msg):
+        c.execute("INSERT INTO logs VALUES (?, ?, ?, ?)",
+                  (self.id, role, msg, now()))
         db.commit()
 
-    def handle(self, message: str) -> str:
-        self.log("user", message)
+    def handle(self, msg):
+        self.log("user", msg)
 
-        intent_type = detect_intent(message)
-        perfil = detect_personality(message)
+        intent_type = detect_intent(msg)
+        perfil = detect_personality(msg)
         self.score += lead_score(intent_type)
 
         c.execute("""
-        UPDATE leads
-        SET score = ?, personalidade = ?, ultima_interacao = ?
-        WHERE id = ?
+        UPDATE leads SET score=?, personalidade=?, ultima_interacao=?
+        WHERE id=?
         """, (self.score, perfil, now(), self.id))
         db.commit()
 
-        response = self.sales.respond(intent_type, perfil)
-        self.log("agent", response)
+        resposta = self.sales.respond(intent_type)
+        self.log("agent", resposta)
+        return resposta
 
-        return response
+ia = IAUltraPlus()
 
 # ============================================================
-# EXECUÇÃO
+# ROTAS
 # ============================================================
 
-if __name__ == "__main__":
-    ia = IAUltraPlus()
-    print("IA: Fala, tudo certo?")
+@app.route("/")
+def home():
+    return "IA ULTRA++ ONLINE 🚀"
 
-    while True:
-        user_input = input("Cliente: ")
-        if user_input.lower() in ["exit", "sair"]:
-            print("IA: Até mais!")
-            break
+@app.route("/chat", methods=["POST"])
+def chat():
+    data = request.json
+    mensagem = data.get("message", "")
+    resposta = ia.handle(mensagem)
+    return jsonify({"resposta": resposta})
 
-        print("IA:", ia.handle(user_input))
+# ============================================================
+# RUN
+# ============================================================
+
+app.run(host="0.0.0.0", port=3000)
